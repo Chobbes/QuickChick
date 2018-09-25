@@ -6,6 +6,7 @@ src/Nat_util.v
 src/RandomQC.v
 src/RoseTrees.v
 src/GenLowInterface.v
+src/Serial.v
 src/GenLow.v
 src/GenHighInterface.v
 src/GenHighImpl.v
@@ -17,6 +18,7 @@ src/StringOT.v
 src/Show.v
 src/ShowFacts.v
 src/State.v
+src/SerialChecker.v
 src/Checker.v
 src/SemChecker.v
 src/Test.v

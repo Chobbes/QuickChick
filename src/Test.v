@@ -5,16 +5,13 @@ Require Import Omega.
 Require Import mathcomp.ssreflect.ssreflect.
 From mathcomp Require Import ssrnat ssrbool eqtype div.
 
-(* N.B.: this pulls in [ExtrOcamlString] (ExtractionQC also does) *)
-From SimpleIO Require Import CoqPervasives.
+From QuickChick Require Import RoseTrees RandomQC Serial (*GenLow GenHigh SemChecker*).
+From QuickChick Require Import Show SerialChecker State Classes.
 
-From QuickChick Require Import RoseTrees RandomQC GenLow GenHigh SemChecker.
-From QuickChick Require Import Show Checker State Classes.
-
+Require Import Coq.Strings.String.
 Require Import Coq.Strings.Ascii.
 Require Import Coq.Strings.String.
 Require Import List.
-Import ListNotations.
 
 Require Import Recdef.
 
@@ -129,7 +126,7 @@ Definition summary (st : State) : list (string * nat) :=
   let res := Map.fold (fun key elem acc => (key,elem) :: acc) (labels st) nil
   in insSortBy (fun x y => snd y <= snd x) res .
 
-Definition doneTesting (st : State) (f : nat -> RandomSeed -> QProp) : Result :=
+Definition doneTesting (st : State) : Result :=
  if expectedFailure st then
     Success (numSuccessTests st + 1) (numDiscardedTests st) (summary st)
             ("+++ Passed " ++ (show (numSuccessTests st)) ++ " tests (" ++ (show (numDiscardedTests st)) ++ " discards)")
@@ -139,12 +136,12 @@ Definition doneTesting (st : State) (f : nat -> RandomSeed -> QProp) : Result :=
                                              ++ " tests (expected Failure)").
   (* TODO: success st - labels *)
 
-Definition giveUp (st : State) (_ : nat -> RandomSeed -> QProp) : Result :=
+Definition giveUp (st : State) : Result :=
   GaveUp (numSuccessTests st) (summary st)
          ("*** Gave up! Passed only " ++ (show (numSuccessTests st)) ++ " tests"
           ++  newline ++ "Discarded: " ++ (show (numDiscardedTests st))).
 
-Definition callbackPostTest (st : State) (res : Checker.Result) : nat :=
+Definition callbackPostTest (st : State) (res : SerialChecker.Result) : nat :=
   match res with
   | MkResult o e r i s c t =>
     fold_left (fun acc callback =>
@@ -156,7 +153,7 @@ Definition callbackPostTest (st : State) (res : Checker.Result) : nat :=
   end.
   
 
-Definition callbackPostFinalFailure (st : State) (res : Checker.Result)
+Definition callbackPostFinalFailure (st : State) (res : SerialChecker.Result)
 : nat :=
 match res with
   | MkResult o e r i s c t =>
@@ -168,12 +165,12 @@ match res with
                end) c 0
 end.
 
-Fixpoint localMin (st : State) (r : Rose Checker.Result)
-         {struct r} : (nat * Checker.Result) :=
+Fixpoint localMin (st : State) (r : Rose SerialChecker.Result)
+         {struct r} : (nat * SerialChecker.Result) :=
   match r with
   | MkRose res ts =>
     let fix localMin' st ts {struct ts} :=
-        match ts return (nat * Checker.Result) with
+        match ts return (nat * SerialChecker.Result) with
         | nil =>
           let zero := callbackPostFinalFailure st res in
           (numSuccessShrinks st + zero, res)
@@ -199,21 +196,22 @@ Fixpoint localMin (st : State) (r : Rose Checker.Result)
     localMin' st (force ts)
   end.
 
-Fixpoint runATest (st : State) (f : nat -> RandomSeed -> QProp) (maxSteps : nat) :=
+Fixpoint runATest (st : State) (ch : LazyList QProp) (maxSteps : nat) :=
   if maxSteps is maxSteps'.+1 then
     let size := (computeSize st) (numSuccessTests st) (numDiscardedTests st) in
     let (rnd1, rnd2) := randomSplit (randomSeed st) in
     let test (st : State) :=
         if (gte (numSuccessTests st) (maxSuccessTests st)) then
-          doneTesting st f
+          doneTesting st
         else if (gte (numDiscardedTests st) (maxDiscardedTests st)) then
-               giveUp st f
-             else runATest st f maxSteps'
+               giveUp st
+             else runATest st ch maxSteps'
     in
     match st with
     | MkState mst mdt ms cs nst ndt ls e r nss nts =>
-      match f size rnd1 with
-      | MkProp (MkRose res ts) =>
+      match ch with
+      | lnil => giveUp st
+      | lcons (MkProp (MkRose res ts)) ch' =>
         (* TODO: CallbackPostTest *)
         let res_cb := callbackPostTest st res in
         match res with
@@ -275,16 +273,17 @@ Fixpoint runATest (st : State) (f : nat -> RandomSeed -> QProp) (maxSteps : nat)
         end
       end
     end
-  else giveUp st f.
+  else giveUp st.
 
-Definition test (st : State) (f : nat -> RandomSeed -> QProp) : Result :=
+Definition test (st : State) (ch : LazyList QProp) : Result :=
   if (gte (numSuccessTests st) (maxSuccessTests st)) then
-    doneTesting st f
+    doneTesting st
   else if (gte (numDiscardedTests st) (maxDiscardedTests st)) then
-         giveUp st f
+         giveUp st
   else
     let maxSteps := maxSuccessTests st + maxDiscardedTests st in
-    runATest st f maxSteps.
+    runATest st ch maxSteps.
+
 
 Require Import ZArith.
 
@@ -310,7 +309,8 @@ Definition quickCheckWith {prop : Type} {_ : Checkable prop}
                 rnd             (* randomSeed        *)
                 0               (* numSuccessShrinks *)
                 0               (* numTryShrinks     *)
-       ) (run (checker p)).
+       ) (@series _ (checker p) 2).
+
 
 Fixpoint showCollectStatistics (l : list (string * nat)) :=
   match l with
@@ -330,33 +330,3 @@ Instance showResult : Show Result := Build_Show _ (fun r =>
 Definition quickCheck {prop : Type} {_ : Checkable prop}
            (p : prop) : Result :=
   quickCheckWith stdArgs p.
-
-Import IONotations.
-
-(* A named test property with parameters. *)
-Inductive Test : Type :=
-| QuickChickTest : string -> Args -> Checker -> Test.
-
-(* Make a named test property with explicit parameters. *)
-Definition qc_ {prop : Type} {_ : Checkable prop}
-           (name : string) (a : Args) (p : prop) : Test :=
-  QuickChickTest name a (checker p).
-
-(* Make a named test property with implicit default parameters. *)
-Definition qc {prop : Type} {_ : Checkable prop}
-           (name : string) (p : prop) : Test :=
-  qc_ name stdArgs (checker p).
-
-(* IO action that runs the tests. *)
-Fixpoint testRunner (tests : list Test) : IO unit :=
-  match tests with
-  | [] => IOMonad.ret tt
-  | QuickChickTest name args test :: tests =>
-    print_endline ("Checking " ++ name ++ "...");;
-    print_endline (show (quickCheckWith args test));;
-    testRunner tests
-  end.
-
-(* Actually run the tests. (Only meant for extraction.) *)
-Definition runTests (tests : list Test) : unit :=
-  unsafe_run (testRunner tests).
