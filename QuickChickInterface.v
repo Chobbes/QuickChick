@@ -801,7 +801,7 @@ Record Args :=
     [QcDoNotation] sub-module: *)
 Module QcDoNotation.
   Notation "'do!' X <- A ; B" :=
-    (bindGen A (fun X => B))
+    (bind A (fun X => B))
     (at level 200, X ident, A at level 100, B at level 200).
   Notation "'do\'' X <- A ; B" :=
     (bindGen' A (fun X H => B))

@@ -200,7 +200,7 @@ Fixpoint runATest (st : State) (ch : LazyList QProp) (maxSteps : nat) :=
   if maxSteps is maxSteps'.+1 then
     let size := (computeSize st) (numSuccessTests st) (numDiscardedTests st) in
     let (rnd1, rnd2) := randomSplit (randomSeed st) in
-    let test (st : State) :=
+    let test (st : State) (ch : LazyList QProp) :=
         if (gte (numSuccessTests st) (maxSuccessTests st)) then
           doneTesting st
         else if (gte (numDiscardedTests st) (maxDiscardedTests st)) then
@@ -237,7 +237,7 @@ Fixpoint runATest (st : State) (ch : LazyList QProp) (maxSteps : nat) :=
                                     | Some k => Map.add stamp (k+1) stamps
                                     end
                                  ) s ls in*)
-            test (MkState mst mdt ms cs (nst + 1) ndt ls' e rnd2 nss nts)
+            test (MkState mst mdt ms cs (nst + 1) ndt ls' e rnd2 nss nts) (force ch')
           else (* Failure *)
             let tag_text := 
                 match t with 
@@ -254,7 +254,7 @@ Fixpoint runATest (st : State) (ch : LazyList QProp) (maxSteps : nat) :=
             if (negb (expect res)) then
               Success (nst + 1) ndt (summary st) (tag_text ++ pre ++ suf)
             else
-              Failure (nst + 1) numShrinks ndt r size (tag_text ++ pre ++ suf) (summary st) reas
+              Failure (nst + 1) numShrinks ndt r 0 (tag_text ++ pre ++ suf) (summary st) reas
         | MkResult None e reas _ s _ t =>
           (* Ignore labels of discarded tests? *)
           let ls' :=
@@ -269,7 +269,7 @@ Fixpoint runATest (st : State) (ch : LazyList QProp) (maxSteps : nat) :=
                 | Some k => Map.add s_to_add (k+1) ls
                 end
               end in
-          test (MkState mst mdt ms cs nst ndt.+1 ls' e rnd2 nss nts)
+          test (MkState mst mdt ms cs nst ndt.+1 ls' e rnd2 nss nts) (force ch')
         end
       end
     end
@@ -309,7 +309,7 @@ Definition quickCheckWith {prop : Type} {_ : Checkable prop}
                 rnd             (* randomSeed        *)
                 0               (* numSuccessShrinks *)
                 0               (* numTryShrinks     *)
-       ) (@series _ (checker p) 2).
+       ) (@series _ (checker p) 50).
 
 
 Fixpoint showCollectStatistics (l : list (string * nat)) :=
@@ -327,6 +327,33 @@ Instance showResult : Show Result := Build_Show _ (fun r =>
   | NoExpectedFailure _ l s => showCollectStatistics l ++ s
   end ++ newline).
 
+(*
 Definition quickCheck {prop : Type} {_ : Checkable prop}
            (p : prop) : Result :=
   quickCheckWith stdArgs p.
+*)
+
+Definition smallCheckWith {prop : Type} {_ : Checkable prop} (a : Args)
+           (depth : nat) (p : prop) : Result :=
+  let (rnd, computeFun) :=
+      match replay a with
+        | Some (rnd, s) => (rnd, at0 (computeSize' a) s)
+        | None          => (newRandomSeed, computeSize' a)
+        (* make it more random...? need IO action *)
+      end in
+  test (MkState (maxSuccess a)  (* maxSuccessTests   *)
+                (maxDiscard a)  (* maxDiscardTests   *)
+                (maxShrinks a)  (* maxShrinks        *)
+                computeFun      (* computeSize       *)
+                0               (* numSuccessTests   *)
+                0               (* numDiscardTests   *)
+                (Map.empty nat) (* labels            *)
+                false           (* expectedFailure   *)
+                rnd             (* randomSeed        *)
+                0               (* numSuccessShrinks *)
+                0               (* numTryShrinks     *)
+       ) (@series _ (checker p) depth).
+
+
+Definition quickCheck {prop : Type} {_ : Checkable prop} (p : prop) : Result :=
+  smallCheckWith stdArgs 20 p.

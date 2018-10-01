@@ -5,7 +5,7 @@ Require Import QuickChickInterface.
 
 
 (* This module is just to keep the BasicInterface up-to-date with the implementation. *)
-
+(*
 Module ConsistencyCheck : QuickChickSig.
 
   Definition RandomSeed := RandomSeed.
@@ -235,3 +235,4 @@ Module ConsistencyCheck : QuickChickSig.
   Notation "'genST' x" := (@arbitraryST _ x _) (at level 70).
 
 End ConsistencyCheck.
+*)

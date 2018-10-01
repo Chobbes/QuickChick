@@ -38,10 +38,10 @@ Require Export Show.
 Require Export RandomQC.
 Require Export Sets.
 Require Export Nat_util.
-Require Export GenLow.
+Require Export Serial.
 Require Export GenHigh.
 Require Export State.
-Require Export Checker.
+Require Export SerialChecker.
 Require Export SemChecker.
 Require Export Test.
 Require Export ExtractionQC.

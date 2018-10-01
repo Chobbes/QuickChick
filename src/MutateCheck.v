@@ -43,6 +43,7 @@ Definition message (kill : bool) (n1 n2 : nat) :=
 
 Open Scope nat.
 
+(*
 Definition mutateCheckManyWith {A P : Type} {_: Checker.Checkable P}
            {mutA: Mutateable A} (args : Args)
            (a : A) (ps : A -> list P) :=
@@ -71,3 +72,4 @@ Definition mutateCheck {A P: Type}
            {_: Checkable P} {mutA: Mutateable A}
            (a : A) (p : A -> P):=
   mutateCheckManyWith stdArgs a (fun a => cons (p a) nil).
+*)
