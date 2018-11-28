@@ -57,13 +57,15 @@ let link_files = []
 
 (* TODO: in Coq 8.5, fetch OCaml's path from Coq's configure *)
 (* FIX: There is probably a more elegant place to put this flag! *)
-let ocamlopt = "ocamlopt -unsafe-string"
+let ocamlopt = "ocamlfind ocamlopt -unsafe-string -linkpkg -package unix"
 let ocamlc = "ocamlc -unsafe-string"
 
 let comp_ml_cmd fn out =
   let path = Lazy.force path in
   let link_files = List.map (Filename.concat path) link_files in
   let link_files = String.concat " " link_files in
+  Printf.printf "%s -rectypes -w a -I %s -I %s %s %s -o %s" ocamlopt
+    (Filename.dirname fn) path link_files fn out;
   Printf.sprintf "%s -rectypes -w a -I %s -I %s %s %s -o %s" ocamlopt
     (Filename.dirname fn) path link_files fn out
 
@@ -76,6 +78,8 @@ let comp_mli_cmd fn =
   let path = Lazy.force path in
   let link_files = List.map (Filename.concat path) link_files in
   let link_files = String.concat " " link_files in
+  Printf.printf "%s -rectypes -w a -I %s -I %s %s %s" ocamlopt
+    (Filename.dirname fn) path link_files fn;
   Printf.sprintf "%s -rectypes -w a -I %s -I %s %s %s" ocamlopt
     (Filename.dirname fn) path link_files fn
 
@@ -128,6 +132,13 @@ let define_and_run c env evd =
   (** Add a main function to get some output *)
   let oc = open_out_gen [Open_append;Open_text] 0o666 mlf in
   let for_output =
+    "\nlet _ =\n" ^
+    "let args = [| \"quickchick process\" |] in\n" ^
+    "let pid = Unix.fork () in\n" ^
+    "  if pid == 0 then\n" ^
+    "    Unix.execvp \"yes\" args\n" ^
+    "  else\n" ^
+    "    ()\n\n" ^
     "\nlet _ = print_string (\n" ^
     "let l = (" ^ (Id.to_string main) ^ ") in\n"^
     "let s = Bytes.create (List.length l) in\n" ^
