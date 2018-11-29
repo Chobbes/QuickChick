@@ -66,7 +66,7 @@ let link_files = ["quickChickLib.cmx"]
 
 (* TODO: in Coq 8.5, fetch OCaml's path from Coq's configure *)
 (* FIX: There is probably a more elegant place to put this flag! *)
-let ocamlopt = "ocamlopt"
+let ocamlopt = "ocamlfind ocamlopt"
 let ocamlc = "ocamlc -unsafe-string"
 
 let eval_command (cmd : string) : string =
@@ -84,12 +84,16 @@ let comp_ml_cmd tmp_dir fn out =
   let extra_link_files =
     String.concat " " (List.map (fun (s : string * string) -> tmp_dir ^ "/" ^ fst s) !extra_files) in
   print_endline ("Extra: " ^ extra_link_files);
-  Printf.sprintf "%s unix.cmxa str.cmxa %s -unsafe-string -rectypes -w a -I %s -I %s -I %s %s %s %s -o %s" ocamlopt afl_link (Filename.dirname fn) afl_path path link_files extra_link_files fn out
+  Printf.sprintf "%s -linkpkg -package unix,str,bisect_ppx %s -unsafe-string -rectypes -w a -I %s -I %s -I %s %s %s %s -o %s" ocamlopt afl_link (Filename.dirname fn) afl_path path link_files extra_link_files fn out
 
 (*
 let comp_mli_cmd fn =
   Printf.sprintf "%s -rectypes -I %s %s" ocamlc (Lazy.force path) fn
  *)
+
+let shell_escape st =
+  let escape_regex = Str.regexp "\\( \\|(\\|)\\|\"\\|'\\)" in
+Str.global_replace escape_regex "" st;;
 
 let comp_mli_cmd fn =
   let path = Lazy.force path in
@@ -128,17 +132,17 @@ let define c =
 
 (* [$TMP/QuickChick/$TIME/QuickChick.ml],
    where [$TIME] is the current time in format [HHMMSS]. *)
-let new_ml_file () =
+let new_ml_file name =
   let tm = Unix.localtime (Unix.time ()) in
   let ts = Printf.sprintf "%02d%02d%02d" tm.Unix.tm_hour tm.Unix.tm_min tm.Unix.tm_sec in
   let temp_dir = Filename.concat temp_dirname ts in
   mkdir_ temp_dir;
-  (temp_dir, Filename.temp_file ~temp_dir "QuickChick" ".ml")
+  (temp_dir, shell_escape (Filename.temp_file ~temp_dir ("QuickChick_" ^ name ^ "_") ".ml"))
 
-let define_and_run fuzz show_and_c_fun =
+let define_and_run fuzz name show_and_c_fun =
   (** Extract the term and its dependencies *)
   let main = define show_and_c_fun in
-  let (temp_dir, mlf) = new_ml_file () in
+  let (temp_dir, mlf) = new_ml_file name in
   let execn = Filename.chop_extension mlf in
   let mlif = execn ^ ".mli" in
   let warnings = CWarnings.get_flags () in
@@ -222,7 +226,7 @@ let _ =
          (* Kid forks two processes, one that is the worker, one that is the timeout *)
          begin match Unix.fork () with
          | 0 -> (* worker *)
-            let cmd = Printf.sprintf "time afl-fuzz -i %s -o %s %s @@" input_dir (temp_dir ^ "/output") execn in
+            let cmd = Printf.sprintf "time afl-fuzz -t 10000 -i %s -o %s %s @@" input_dir (temp_dir ^ "/output") execn in
             Printf.printf "Child is executing...\n%s\n" cmd; 
             ignore (Sys.command cmd);
             exit 0;
@@ -291,7 +295,7 @@ let _ =
  *)
 
 (* TODO: clean leftover files *)
-let runTest fuzz (c : constr_expr) =
+let runTest fuzz name (c : constr_expr) =
   (** [c] is a constr_expr representing the test to run,
       so we first build a new constr_expr representing
       show c **)
@@ -317,18 +321,20 @@ let runTest fuzz (c : constr_expr) =
   let env = Global.env () in
   let evd = Evd.from_env env in
   let (show_and_c_fun, evd) = interp_constr env evd show_and_c_fun in
-  define_and_run fuzz show_and_c_fun
+  define_and_run fuzz name show_and_c_fun
 
 let run fuzz f args =
   begin match args with
-  | qc_text :: _ -> Printf.printf "QuickChecking %s\n"
-                      (Pp.string_of_ppcmds (Ppconstr.pr_constr_expr qc_text));
-                      flush_all()
+  | qc_text :: _ ->
+     let name = (Pp.string_of_ppcmds (Ppconstr.pr_constr_expr qc_text)) in
+     Printf.printf "QuickChecking %s\n" name;
+     flush_all();
+     let args = List.map (fun x -> (x,None)) args in
+     let c = CAst.make @@ CApp((None,f), args) in
+     ignore (runTest fuzz name c)
+
   | _ -> failwith "run called with no arguments"
-  end;
-  let args = List.map (fun x -> (x,None)) args in
-  let c = CAst.make @@ CApp((None,f), args) in
-  ignore (runTest fuzz c)
+  end
 
 let set_debug_flag (flag_name : string) (mode : string) =
   let toggle =
